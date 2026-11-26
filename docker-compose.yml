@@ -1,0 +1,83 @@
+services:
+  bdfestivos:
+    image: mongo:7
+    container_name: dockerbdfestivos
+    restart: unless-stopped
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./bdFestivos/iniciarBDFestivos.js:/docker-entrypoint-initdb.d/iniciarBDFestivos.js:ro
+    networks:
+      - redcalendario
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  apifestivos:
+    build:
+      context: ./apiFestivos
+    container_name: dockerapifestivos
+    restart: unless-stopped
+    environment:
+      PORT: 8080
+      MONGO_URI: mongodb://bdfestivos:27017/festivos
+    ports:
+      - "8090:8080"
+    depends_on:
+      bdfestivos:
+        condition: service_healthy
+    networks:
+      - redcalendario
+
+  bdcalendario:
+    build:
+      context: ./bdCalendario
+    container_name: dockerbdcalendario
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: calendariolaboral
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: sa
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - redcalendario
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d calendariolaboral"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  apicalendario:
+    build:
+      context: ./apiCalendario
+    container_name: dockerapicalendario
+    restart: unless-stopped
+    environment:
+      PORT: 8081
+      DB_URL: jdbc:postgresql://bdcalendario:5432/calendariolaboral
+      DB_USUARIO: postgres
+      DB_CLAVE: sa
+      FESTIVOS_API_URL: http://apifestivos:8080
+    ports:
+      - "8091:8081"
+    depends_on:
+      bdcalendario:
+        condition: service_healthy
+      apifestivos:
+        condition: service_started
+    networks:
+      - redcalendario
+
+networks:
+  redcalendario:
+    driver: bridge
+
+volumes:
+  mongo_data:
+  postgres_data:
